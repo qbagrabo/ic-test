@@ -1,0 +1,6 @@
+# Wersje przypięte (==) dla powtarzalności wyników.
+playwright==1.60.0
+pytest==8.3.5
+pytest-playwright==0.8.0
+pytest-xdist==3.6.1
+pytest-html==4.1.1

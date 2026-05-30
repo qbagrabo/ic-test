@@ -1,0 +1,56 @@
+name: E2E – ING cookie consent
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:        # ręczne uruchomienie z UI
+  schedule:
+    - cron: "0 6 * * 1"     # cotygodniowy "smoke" — kontrola powtarzalności
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    name: ${{ matrix.browser }}
+    strategy:
+      fail-fast: false       # jedna przeglądarka nie ubija pozostałych
+      matrix:
+        browser: [chromium, firefox, webkit]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Playwright browser (${{ matrix.browser }})
+        run: playwright install --with-deps ${{ matrix.browser }}
+
+      - name: Run E2E test
+        run: >
+          pytest
+          --browser ${{ matrix.browser }}
+          --html=report-${{ matrix.browser }}.html
+          --self-contained-html
+
+      - name: Job summary
+        if: always()
+        run: |
+          echo "## Wynik: ${{ matrix.browser }} — ${{ job.status }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Raport HTML i ślady (trace/wideo/screenshot przy faillu) w artefaktach." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload artifacts
+        if: always()         # artefakty również przy faillu — kluczowe do debugu
+        uses: actions/upload-artifact@v4
+        with:
+          name: report-${{ matrix.browser }}
+          path: |
+            report-${{ matrix.browser }}.html
+            test-results/
+          retention-days: 14
+          if-no-files-found: ignore
