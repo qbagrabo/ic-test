@@ -5,6 +5,8 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: "0 7,10,13 * * 1-5"   # pon–pt, godz. 9/12/15 — UWAGA: czas UTC  
 
 jobs:
   e2e:
@@ -16,9 +18,9 @@ jobs:
         browser: [chromium, firefox, webkit]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -63,7 +65,7 @@ jobs:
 
       - name: Upload artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: report-${{ matrix.browser }}
           path: |
