@@ -7,3 +7,4 @@ test-results/
 report*.html
 .DS_Store
 .github/workflows/e2e_initial.yml
+.github/workflows/e2e_bez_pages.yml

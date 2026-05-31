@@ -6,7 +6,8 @@ on:
   pull_request:
   workflow_dispatch:
   schedule:
-    - cron: "0 7,10,13 * * 1-5"   # pon–pt, godz. 9/12/15 — UWAGA: czas UTC  
+    # UWAGA: czas UTC. Dla polskiego lata (CEST) 9/12/15 to "0 7,10,13 * * 1-5".
+    - cron: "0 9,12,15 * * 1-5"   # pon–pt, 09/12/15 UTC
 
 jobs:
   e2e:
@@ -31,19 +32,16 @@ jobs:
       - name: Install Playwright browser (${{ matrix.browser }})
         run: playwright install --with-deps ${{ matrix.browser }}
 
-      # # --- Dołącz runner do tailnetu jako węzeł efemeryczny (po instalacjach!) ---
+      # --- Tailscale (na później; odkomentuj, gdy laptop-exit-node będzie gotowy) ---
       # - name: Connect to Tailscale
       #   uses: tailscale/github-action@v3
       #   with:
       #     oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
       #     oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
       #     tags: tag:ci
-
-      # # --- Kieruj ruch wyjściowy przez domowy exit node (laptop) ---
       # - name: Route egress via home exit node
       #   run: |
       #     sudo tailscale set --exit-node="${{ secrets.TS_EXIT_NODE }}" --exit-node-allow-lan-access
-      #     echo "IP wyjściowe (powinno być domowe, nie Azure):"
       #     curl -s https://api.ipify.org || true
 
       - name: Run E2E test
@@ -54,7 +52,6 @@ jobs:
           --html=report-${{ matrix.browser }}.html
           --self-contained-html
 
-      # # --- Przestań routować przez dom, żeby upload artefaktów szedł normalnie ---
       # - name: Stop routing via exit node
       #   if: always()
       #   run: sudo tailscale set --exit-node= || true
@@ -62,6 +59,10 @@ jobs:
       - name: Podsumowanie w GUI (z results.xml)
         if: always()
         run: python scripts/junit_to_summary.py results-${{ matrix.browser }}.xml >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Link do raportu pod tabelką
+        if: always()
+        run: echo "### 📊 [Pełny raport HTML](https://qbagrabo.github.io/ic-test/report-${{ matrix.browser }}.html)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload artifacts
         if: always()
@@ -74,3 +75,49 @@ jobs:
             test-results/
           retention-days: 14
           if-no-files-found: ignore
+
+  publish-report:
+    needs: e2e
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    concurrency:
+      group: pages-deploy
+      cancel-in-progress: false
+    steps:
+      - name: Pobierz raporty z jobów
+        uses: actions/download-artifact@v7
+        with:
+          path: artifacts
+
+      - name: Złóż stronę (nadpisuje poprzednią)
+        run: |
+          mkdir -p site
+          find artifacts -name 'report-*.html' -exec cp {} site/ \;
+          {
+            echo "<h1>Raporty E2E – ING cookie consent</h1>"
+            echo "<p>Run #${{ github.run_number }} &middot; $(date -u '+%Y-%m-%d %H:%M UTC')</p>"
+            echo "<ul>"
+            for f in site/report-*.html; do n=$(basename "$f"); echo "<li><a href=\"$n\">$n</a></li>"; done
+            echo "</ul>"
+          } > site/index.html
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
+
+      - name: Link zbiorczy w podsumowaniu
+        if: always()
+        run: echo "### 📊 [Wszystkie raporty (index)](${{ steps.deploy.outputs.page_url }})" >> "$GITHUB_STEP_SUMMARY"
