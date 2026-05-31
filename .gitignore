@@ -6,3 +6,4 @@ venv/
 test-results/
 report*.html
 .DS_Store
+.github/workflows/e2e_initial.yml

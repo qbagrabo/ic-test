@@ -4,16 +4,14 @@ on:
   push:
     branches: [main]
   pull_request:
-  workflow_dispatch:        # ręczne uruchomienie z UI
-  schedule:
-    - cron: "0 6 * * 1"     # cotygodniowy "smoke" — kontrola powtarzalności
+  workflow_dispatch:
 
 jobs:
   e2e:
     runs-on: ubuntu-latest
     name: ${{ matrix.browser }}
     strategy:
-      fail-fast: false       # jedna przeglądarka nie ubija pozostałych
+      fail-fast: false
       matrix:
         browser: [chromium, firefox, webkit]
 
@@ -31,26 +29,46 @@ jobs:
       - name: Install Playwright browser (${{ matrix.browser }})
         run: playwright install --with-deps ${{ matrix.browser }}
 
+      # # --- Dołącz runner do tailnetu jako węzeł efemeryczny (po instalacjach!) ---
+      # - name: Connect to Tailscale
+      #   uses: tailscale/github-action@v3
+      #   with:
+      #     oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+      #     oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+      #     tags: tag:ci
+
+      # # --- Kieruj ruch wyjściowy przez domowy exit node (laptop) ---
+      # - name: Route egress via home exit node
+      #   run: |
+      #     sudo tailscale set --exit-node="${{ secrets.TS_EXIT_NODE }}" --exit-node-allow-lan-access
+      #     echo "IP wyjściowe (powinno być domowe, nie Azure):"
+      #     curl -s https://api.ipify.org || true
+
       - name: Run E2E test
         run: >
           pytest
           --browser ${{ matrix.browser }}
+          --junitxml=results-${{ matrix.browser }}.xml
           --html=report-${{ matrix.browser }}.html
           --self-contained-html
 
-      - name: Job summary
+      # # --- Przestań routować przez dom, żeby upload artefaktów szedł normalnie ---
+      # - name: Stop routing via exit node
+      #   if: always()
+      #   run: sudo tailscale set --exit-node= || true
+
+      - name: Podsumowanie w GUI (z results.xml)
         if: always()
-        run: |
-          echo "## Wynik: ${{ matrix.browser }} — ${{ job.status }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "Raport HTML i ślady (trace/wideo/screenshot przy faillu) w artefaktach." >> "$GITHUB_STEP_SUMMARY"
+        run: python scripts/junit_to_summary.py results-${{ matrix.browser }}.xml >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload artifacts
-        if: always()         # artefakty również przy faillu — kluczowe do debugu
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: report-${{ matrix.browser }}
           path: |
             report-${{ matrix.browser }}.html
+            results-${{ matrix.browser }}.xml
             test-results/
           retention-days: 14
           if-no-files-found: ignore
