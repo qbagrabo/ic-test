@@ -113,6 +113,18 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
+      # Pełne wyniki Playwright (trace.zip, wideo, screeny, junit) — do podglądu w trace viewer.
+      - name: Upload pełne wyniki Playwright (${{ matrix.browser }})
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results-${{ matrix.browser }}
+          path: |
+            test-results/
+            results-${{ matrix.browser }}.xml
+          retention-days: 14
+          if-no-files-found: ignore
+
   publish-report:
     needs: e2e
     if: always()
