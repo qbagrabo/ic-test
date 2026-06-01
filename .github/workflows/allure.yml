@@ -1,0 +1,163 @@
+name: Allure E2E – ING cookie consent
+
+# Wariant raportowania oparty o Allure (osobny od e2e.yml).
+# Testy uruchamiają się TU (repo z kodem), a gotowy raport jest publikowany
+# do OSOBNEGO repo (ic-test-reports) na GitHub Pages — przez deploy key.
+# Dzięki temu e2e.yml i jego Pages pozostają nietknięte.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  schedule:
+    # czas UTC; pon–pt 09/12/15 UTC (jak w e2e.yml)
+    - cron: "0 9,12,15 * * 1-5"
+
+# Konfiguracja celu publikacji w jednym miejscu.
+env:
+  REPORTS_REPO: qbagrabo/ic-test-reports
+  PAGES_BASE: https://qbagrabo.github.io/ic-test-reports
+  KEEP_RUNS: "10"          # ile ostatnich runów trzymać (browsowalne raporty)
+  ALLURE_VERSION: "2.24.0"
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    name: ${{ matrix.browser }}
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements-allure.txt
+
+      - name: Install Playwright browser (${{ matrix.browser }})
+        run: playwright install --with-deps ${{ matrix.browser }}
+
+      - name: Run E2E test
+        run: >
+          pytest
+          --browser ${{ matrix.browser }}
+          --junitxml=results-${{ matrix.browser }}.xml
+          --alluredir=allure-results-${{ matrix.browser }}
+
+      - name: Podsumowanie + link do Allure
+        if: always()
+        run: >
+          python scripts/allure_summary.py
+          results-${{ matrix.browser }}.xml
+          "${{ env.PAGES_BASE }}/runs/${{ github.run_number }}/${{ matrix.browser }}/"
+          >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload allure-results (${{ matrix.browser }})
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-${{ matrix.browser }}
+          path: allure-results-${{ matrix.browser }}/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  publish-report:
+    needs: e2e
+    if: always()
+    runs-on: ubuntu-latest
+    # Tylko jedna publikacja do gh-pages naraz (schedule + push mogą się nałożyć).
+    concurrency:
+      group: allure-pages-deploy
+      cancel-in-progress: false
+    steps:
+      - name: Checkout kodu (skrypty index/summary)
+        uses: actions/checkout@v4
+
+      - name: Checkout repo z raportami (gh-pages)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.REPORTS_REPO }}
+          ref: gh-pages
+          ssh-key: ${{ secrets.ALLURE_DEPLOY_KEY }}
+          path: reports-repo
+        # Pierwszy run: branch gh-pages jeszcze nie istnieje — to OK.
+        continue-on-error: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Pobierz wyniki ze wszystkich przeglądarek
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: allure-results-*
+
+      - name: Setup Allure CLI
+        run: |
+          wget -q "https://github.com/allure-framework/allure2/releases/download/${ALLURE_VERSION}/allure-${ALLURE_VERSION}.tgz"
+          tar -zxf "allure-${ALLURE_VERSION}.tgz"
+          echo "$(pwd)/allure-${ALLURE_VERSION}/bin" >> "$GITHUB_PATH"
+
+      - name: Generuj raporty Allure (per przeglądarka, z historią)
+        run: |
+          set -e
+          RUN=${{ github.run_number }}
+          mkdir -p reports-repo/runs
+
+          # Poprzedni run = najwyższy istniejący numer.
+          # WAŻNE: liczymy to ZANIM utworzymy folder bieżącego runu,
+          # żeby historia pochodziła z poprzedniego, a nie z pustego bieżącego.
+          PREV=$(ls -1 reports-repo/runs 2>/dev/null | grep -E '^[0-9]+$' | sort -n | tail -1 || true)
+          echo "Poprzedni run: ${PREV:-(brak)}"
+
+          for B in chromium firefox webkit; do
+            RESULTS="artifacts/allure-results-$B"
+            if [ ! -d "$RESULTS" ]; then
+              echo "Brak wyników dla $B — pomijam."
+              continue
+            fi
+
+            # Przenieś historię z poprzedniego runu tej samej przeglądarki (trendy).
+            if [ -n "$PREV" ] && [ -d "reports-repo/runs/$PREV/$B/history" ]; then
+              mkdir -p "$RESULTS/history"
+              cp -r "reports-repo/runs/$PREV/$B/history/." "$RESULTS/history/"
+            fi
+
+            allure generate "$RESULTS" -o "reports-repo/runs/$RUN/$B" --clean
+          done
+
+          # Znacznik czasu pokazywany na stronie głównej.
+          date -u '+%Y-%m-%d %H:%M UTC' > "reports-repo/runs/$RUN/timestamp.txt"
+
+      - name: Przytnij stare runy i zbuduj stronę główną
+        run: |
+          set -e
+          # Zostaw tylko KEEP_RUNS najnowszych runów (browsowalnych).
+          cd reports-repo/runs
+          ls -1 | grep -E '^[0-9]+$' | sort -n | head -n "-${KEEP_RUNS}" | xargs -r rm -rf
+          cd ../..
+
+          python scripts/allure_index.py reports-repo/runs reports-repo/index.html
+
+          # Usuń metadane gita z repo źródłowego, by nie trafiły do publikacji.
+          rm -rf reports-repo/.git
+
+      - name: Publikuj do ic-test-reports (gh-pages)
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          deploy_key: ${{ secrets.ALLURE_DEPLOY_KEY }}
+          external_repository: ${{ env.REPORTS_REPO }}
+          publish_branch: gh-pages
+          publish_dir: ./reports-repo
+          force_orphan: true
+
+      - name: Link zbiorczy w podsumowaniu
+        if: always()
+        run: echo "### 📊 [Strona główna z historią raportów](${{ env.PAGES_BASE }}/)" >> "$GITHUB_STEP_SUMMARY"

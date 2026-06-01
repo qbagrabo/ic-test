@@ -1,0 +1,4 @@
+# Zależności dla wariantu raportowania Allure (workflow allure.yml).
+# Bazę bierzemy z requirements.txt, żeby nie duplikować wersji.
+-r requirements.txt
+allure-pytest==2.13.5
