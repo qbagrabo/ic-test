@@ -47,8 +47,27 @@ jobs:
         continue-on-error: true
         run: |
           set -e
+          echo "::group::Tailscale status (przed)"
+          tailscale status || true
+          echo "::endgroup::"
+
+          IP_DIRECT=$(curl -s --max-time 10 https://api.ipify.org || echo "unknown")
+          echo "IP bez exit node: $IP_DIRECT"
+
           sudo tailscale set --exit-node="${{ secrets.TS_EXIT_NODE }}" --exit-node-allow-lan-access
-          echo "Egress IP: $(curl -s --max-time 10 https://api.ipify.org || echo 'unknown')"
+
+          echo "::group::Tailscale status (po)"
+          tailscale status || true
+          echo "::endgroup::"
+
+          IP_EXIT=$(curl -s --max-time 10 https://api.ipify.org || echo "unknown")
+          echo "IP przez exit node: $IP_EXIT"
+
+          if [ "$IP_EXIT" = "unknown" ] || [ "$IP_EXIT" = "$IP_DIRECT" ]; then
+            echo "::error::Routing NIE idzie przez exit node (IP się nie zmieniło: $IP_DIRECT -> $IP_EXIT). Sprawdź czy node jest online i approved jako exit node."
+            exit 1
+          fi
+          echo "✅ Egress przez exit node: $IP_EXIT (było $IP_DIRECT)"
       - name: Ostrzeżenie gdy exit node niedostępny
         if: steps.tailscale.outcome != 'success' || steps.exit_node.outcome != 'success'
         run: |
