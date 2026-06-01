@@ -32,17 +32,28 @@ jobs:
       - name: Install Playwright browser (${{ matrix.browser }})
         run: playwright install --with-deps ${{ matrix.browser }}
 
-      # --- Tailscale (na później; odkomentuj, gdy laptop-exit-node będzie gotowy) ---
-      # - name: Connect to Tailscale
-      #   uses: tailscale/github-action@v3
-      #   with:
-      #     oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-      #     oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-      #     tags: tag:ci
-      # - name: Route egress via home exit node
-      #   run: |
-      #     sudo tailscale set --exit-node="${{ secrets.TS_EXIT_NODE }}" --exit-node-allow-lan-access
-      #     curl -s https://api.ipify.org || true
+      # --- Tailscale: wyjście przez domowy exit node (fallback: test działa nawet gdy node offline) ---
+      - name: Connect to Tailscale
+        id: tailscale
+        continue-on-error: true
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+      - name: Route egress via home exit node
+        id: exit_node
+        if: steps.tailscale.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -e
+          sudo tailscale set --exit-node="${{ secrets.TS_EXIT_NODE }}" --exit-node-allow-lan-access
+          echo "Egress IP: $(curl -s --max-time 10 https://api.ipify.org || echo 'unknown')"
+      - name: Ostrzeżenie gdy exit node niedostępny
+        if: steps.tailscale.outcome != 'success' || steps.exit_node.outcome != 'success'
+        run: |
+          echo "::warning::Exit node niedostępny – test biegnie przez IP runnera GitHub (nie przez domowy node)."
+          echo "⚠️ Exit node niedostępny – ruch szedł przez IP runnera GitHub, nie przez domowy node." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Run E2E test
         run: >
@@ -52,9 +63,9 @@ jobs:
           --html=report-${{ matrix.browser }}.html
           --self-contained-html
 
-      # - name: Stop routing via exit node
-      #   if: always()
-      #   run: sudo tailscale set --exit-node= || true
+      - name: Stop routing via exit node
+        if: always()
+        run: sudo tailscale set --exit-node= || true
 
       - name: Podsumowanie w GUI (z results.xml)
         if: always()
