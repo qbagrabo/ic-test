@@ -6,8 +6,8 @@ on:
   pull_request:
   workflow_dispatch:
   schedule:
-    # UWAGA: czas UTC. Dla polskiego lata (CEST) 9/12/15 to "0 7,10,13 * * 1-5".
-    - cron: "0 9,12,15 * * 1-5"   # pon–pt, 09/12/15 UTC
+    # UWAGA: czas UTC. Dla polskiego lata (CEST) 16 UTC to 18 CEST.
+    - cron: "0 16 * * *"   # codziennie o 16:00 UTC
 
 jobs:
   e2e:

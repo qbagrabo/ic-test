@@ -10,8 +10,8 @@ on:
   push:
     branches: [main]
   schedule:
-    # czas UTC; pon–pt 09/12/15 UTC (jak w e2e.yml)
-    - cron: "0 9,12,15 * * 1-5"
+    # czas UTC; codziennie o 16:00 UTC (18:00 CEST polskie lato)
+    - cron: "0 16 * * *"
 
 # Konfiguracja celu publikacji w jednym miejscu.
 env:
