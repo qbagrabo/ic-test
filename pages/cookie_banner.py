@@ -53,7 +53,6 @@ class CookieBanner:
     def open_settings(self) -> None:
         """Krok 2: 'Dostosuj' -> pojawia się panel ustawień."""
         self.btn_customize.click()
-        # expect(self.settings_panel).to_be_visible()
         expect(self.toggle_analytical).to_be_visible()
 
     def assert_settings_view(self) -> None:
