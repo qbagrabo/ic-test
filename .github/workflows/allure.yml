@@ -9,9 +9,9 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-  schedule:
+  # schedule:
     # czas UTC; codziennie o 16:00 UTC (18:00 CEST polskie lato)
-    - cron: "0 16 * * *"
+    # - cron: "0 16 * * *"
 
 # Konfiguracja celu publikacji w jednym miejscu.
 env:

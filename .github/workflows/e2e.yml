@@ -5,9 +5,9 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
-  schedule:
+  # schedule:
     # UWAGA: czas UTC. Dla polskiego lata (CEST) 16 UTC to 18 CEST.
-    - cron: "0 16 * * *"   # codziennie o 16:00 UTC
+    # - cron: "0 16 * * *"   # codziennie o 16:00 UTC
 
 jobs:
   e2e:
